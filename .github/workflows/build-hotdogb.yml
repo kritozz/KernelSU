@@ -13,32 +13,26 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            git bc bison flex libssl-dev libncurses5-dev libncursesw5-dev \
-            build-essential ccache unzip wget \
-            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          sudo apt-get install -y git bc bison flex libssl-dev make gcc clang lld llvm \
+            libncurses5-dev libncursesw5-dev ccache unzip wget
 
-      # (Optional) list branches so you can see what's available in logs
       - name: List branches for OnePlus sm8150 repo
         run: |
           git ls-remote --heads https://github.com/OnePlusOSS/android_kernel_oneplus_sm8150
 
-      - name: Clone OnePlus kernel (SM8150_R_10.0) clean
+      - name: Clone OnePlus kernel (SM8150_R_10.0)
         run: |
           set -euxo pipefail
-          rm -rf op7t_kernel || true
-          git clone --depth=1 -b oneplus/SM8150_R_10.0 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8150 op7t_kernel
+          git clone --depth=1 -b SM8150_R_10.0 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8150 op7t_kernel
           ls -la op7t_kernel
 
       - name: Add KernelSU to kernel tree
         run: |
           set -euxo pipefail
           cd op7t_kernel
+          rm -rf KernelSU || true
           git clone --depth=1 https://github.com/tiann/KernelSU KernelSU
-          cd KernelSU
-          chmod +x scripts/setup.sh
-          ./scripts/setup.sh ../
-          cd ..
+          bash KernelSU/kernel/setup.sh ../
           git status
 
       - name: Configure & build kernel
@@ -48,10 +42,9 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          # Try common OP7T configs in order:
-          make O=out hotdog_defconfig || \
-          make O=out hotdogb_defconfig || \
-          make O=out sm8150_defconfig
+          # Try hotdog_defconfig first; if build fails with "No rule to make target",
+          # rerun with hotdogb_defconfig instead.
+          make O=out hotdog_defconfig
           make -j"$(nproc)" O=out
 
       - name: Upload kernel image (Image.gz-dtb)
