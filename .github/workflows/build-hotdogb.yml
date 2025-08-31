@@ -7,32 +7,47 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Kernel source (OnePlus 7T OOS 11.0.5.1)
-        run: |
-          git clone https://github.com/OnePlusOSS/android_kernel_oneplus_sm8150 -b android11 kernel
-          cd kernel
-          git clone https://github.com/tiann/KernelSU KernelSU
-          cd KernelSU
-          ./scripts/setup.sh ../
-      
-      - name: Setup Build Environment
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison flex libssl-dev make gcc clang lld llvm \
-            libncurses5-dev libncursesw5-dev ccache git
+          sudo apt-get install -y git bc bison flex libssl-dev make gcc clang lld llvm \
+            libncurses5-dev libncursesw5-dev ccache unzip wget
 
-      - name: Build Kernel
+      # NOTE: clone into a DIFFERENT dir to avoid conflict with KernelSU's own 'kernel/' folder
+      - name: Clone OnePlus kernel (android11)
         run: |
-          cd kernel
+          set -euxo pipefail
+          git clone --depth=1 -b android11 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8150 op7t_kernel
+          ls -la op7t_kernel
+
+      - name: Add KernelSU to kernel tree
+        run: |
+          set -euxo pipefail
+          cd op7t_kernel
+          git clone --depth=1 https://github.com/tiann/KernelSU KernelSU
+          cd KernelSU
+          chmod +x scripts/setup.sh
+          ./scripts/setup.sh ../
+          cd ..
+          git status
+
+      - name: Configure & build kernel
+        run: |
+          set -euxo pipefail
+          cd op7t_kernel
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
+          # Try hotdog_defconfig first; if build later says "No rule to make target",
+          # rerun with hotdogb_defconfig instead.
           make O=out hotdog_defconfig
-          make -j$(nproc) O=out
+          make -j"$(nproc)" O=out
 
-      - name: Upload Kernel Image
+      - name: Upload kernel image (Image.gz-dtb)
         uses: actions/upload-artifact@v4
-
         with:
           name: kernel-ksu
-          path: kernel/out/arch/arm64/boot/Image.gz-dtb
+          path: op7t_kernel/out/arch/arm64/boot/Image.gz-dtb
