@@ -1,67 +1,42 @@
-name: Build KernelSU Boot for OnePlus 7T (hotdogb)
-
-on:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout this repo
-        uses: actions/checkout@v4
-
-      - name: Install build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git bc bison flex libssl-dev libncurses5-dev libncursesw5-dev \
-            build-essential ccache unzip wget \
-            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
-
-      - name: Clone LineageOS kernel (sm8150, lineage-18.1 / Android 11)
-        run: |
-          set -euxo pipefail
-          rm -rf op7t_kernel || true
-          git clone --depth=1 -b lineage-18.1 https://github.com/LineageOS/android_kernel_oneplus_sm8150 op7t_kernel
-
-      - name: Inject KernelSU v0.9.5 (non-GKI)
-        run: |
-          set -euxo pipefail
-          cd op7t_kernel
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
-          git status
-
-      # speed-ups (optional but helps)
-      - name: Enable ccache
-        run: |
-          echo 'export USE_CCACHE=1' >> $GITHUB_ENV
-          echo 'export CCACHE_DIR=$HOME/.cache/ccache' >> $GITHUB_ENV
-          ccache -o max_size=2G -z || true
-
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ccache-${{ runner.os }}-${{ github.workflow }}-${{ github.sha }}
-          restore-keys: |
-            ccache-${{ runner.os }}-${{ github.workflow }}-
-            ccache-${{ runner.os }}-
-
-      - name: Configure & build kernel (try hotdogb/hotdog)
+      - name: Configure & build kernel (auto-detect defconfig)
         run: |
           set -euxo pipefail
           cd op7t_kernel
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE="ccache aarch64-linux-gnu-"
-          make O=out hotdogb_defconfig || \
-          make O=out hotdog_defconfig || \
-          make O=out sm8150_defconfig
+
+          echo ">>> Listing available defconfigs:"
+          ls -1 arch/arm64/configs | sed -n '1,200p' || true
+
+          # Try to auto-detect the correct defconfig file
+          DEFCONFIG=""
+          for CAND in \
+            hotdogb_defconfig \
+            vendor/hotdogb_defconfig \
+            hotdog_defconfig \
+            vendor/hotdog_defconfig \
+            oneplus7t_defconfig \
+            vendor/oneplus7t_defconfig \
+            oneplus_defconfig \
+            vendor/oneplus_defconfig \
+            sm8150_defconfig \
+            vendor/sm8150_defconfig
+          do
+            if [ -f "arch/arm64/configs/$CAND" ]; then
+              DEFCONFIG="$CAND"
+              break
+            fi
+          done
+
+          if [ -z "$DEFCONFIG" ]; then
+            echo "Could not find a matching defconfig in arch/arm64/configs/"
+            echo "Dumping a grep of likely candidates:"
+            grep -RIl --include="*defconfig" -E 'hotdog|oneplus|sm8150' arch/arm64/configs || true
+            exit 1
+          fi
+
+          echo ">>> Using defconfig: $DEFCONFIG"
+          make O=out "$DEFCONFIG"
           make -j"$(nproc)" O=out
           ccache -s || true
-
-      - name: Upload kernel image (Image.gz-dtb)
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-ksu
-          path: op7t_kernel/out/arch/arm64/boot/Image.gz-dtb
