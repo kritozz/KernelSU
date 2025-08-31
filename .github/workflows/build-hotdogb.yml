@@ -16,6 +16,10 @@ jobs:
           sudo apt-get install -y git bc bison flex libssl-dev make gcc clang lld llvm \
             libncurses5-dev libncursesw5-dev ccache unzip wget
 
+      - name: List branches for OnePlus sm8150 repo
+        run: |
+          git ls-remote --heads https://github.com/OnePlusOSS/android_kernel_oneplus_sm8150
+
       # NOTE: clone into a DIFFERENT dir to avoid conflict with KernelSU's own 'kernel/' folder
       - name: Clone OnePlus kernel (android11)
         run: |
