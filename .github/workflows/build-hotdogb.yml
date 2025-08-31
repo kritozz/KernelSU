@@ -1,0 +1,37 @@
+name: Build KernelSU Boot for OnePlus 7T (hotdogb)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Kernel source (OnePlus 7T OOS 11.0.5.1)
+        run: |
+          git clone https://github.com/OnePlusOSS/android_kernel_oneplus_sm8150 -b android11 kernel
+          cd kernel
+          git clone https://github.com/tiann/KernelSU KernelSU
+          cd KernelSU
+          ./scripts/setup.sh ../
+      
+      - name: Setup Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev make gcc clang lld llvm \
+            libncurses5-dev libncursesw5-dev ccache git
+
+      - name: Build Kernel
+        run: |
+          cd kernel
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out hotdog_defconfig
+          make -j$(nproc) O=out
+
+      - name: Upload Kernel Image
+        uses: actions/upload-artifact@v3
+        with:
+          name: kernel-ksu
+          path: kernel/out/arch/arm64/boot/Image.gz-dtb
