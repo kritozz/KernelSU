@@ -1,62 +1,58 @@
-name: Build debug kernel
+name: Build KernelSU Boot for OnePlus 7T (hotdogb)
+
 on:
   workflow_dispatch:
 
 jobs:
-  build-debug-kernel-a12:
-    uses: ./.github/workflows/gki-kernel.yml
-    with:
-      version: android12-5.10
-      version_name: android12-5.10.226
-      tag: android12-5.10-2024-11
-      os_patch_level: 2024-11
-      patch_path: "5.10"
-      debug: true
-  build-debug-kernel-a13:
-    strategy:
-      matrix:
-        include:
-          - version: "5.10"
-            sub_level: 223
-            os_patch_level: 2024-11
-          - version: "5.15"
-            sub_level: 167
-            os_patch_level: 2024-11
-    uses: ./.github/workflows/gki-kernel.yml
-    with:
-      version: android13-${{ matrix.version }}
-      version_name: android13-${{ matrix.version }}.${{ matrix.sub_level }}
-      tag: android13-${{ matrix.version }}-${{ matrix.os_patch_level }}
-      patch_path: ${{ matrix.version }}
-      debug: true
-  build-debug-kernel-a14:
-    strategy:
-      matrix:
-        include:
-          - version: "5.15"
-            sub_level: 167
-            os_patch_level: 2024-11
-          - version: "6.1"
-            sub_level: 115
-            os_patch_level: 2024-12
-    uses: ./.github/workflows/gki-kernel.yml
-    with:
-      version: android14-${{ matrix.version }}
-      version_name: android14-${{ matrix.version }}.${{ matrix.sub_level }}
-      tag: android14-${{ matrix.version }}-${{ matrix.os_patch_level }}
-      patch_path: ${{ matrix.version }}
-      debug: true
-  build-debug-kernel-a15:
-    strategy:
-      matrix:
-        include:
-          - version: "6.6"
-            sub_level: 57
-            os_patch_level: 2024-12
-    uses: ./.github/workflows/gki-kernel.yml
-    with:
-      version: android15-${{ matrix.version }}
-      version_name: android15-${{ matrix.version }}.${{ matrix.sub_level }}
-      tag: android15-${{ matrix.version }}-${{ matrix.os_patch_level }}
-      patch_path: ${{ matrix.version }}
-      debug: true
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Show runner info
+        run: |
+          uname -a || true
+          git --version || true
+          clang --version || true
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git bc bison flex libssl-dev make gcc clang lld llvm \
+            libncurses5-dev libncursesw5-dev ccache unzip wget
+
+      - name: Clone OnePlus kernel (android11)
+        run: |
+          set -euxo pipefail
+          git clone --depth=1 -b android11 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8150 kernel
+          ls -la kernel
+
+      - name: Add KernelSU to kernel tree
+        run: |
+          set -euxo pipefail
+          cd kernel
+          git clone --depth=1 https://github.com/tiann/KernelSU KernelSU
+          cd KernelSU
+          chmod +x scripts/setup.sh
+          ./scripts/setup.sh ../
+          cd ..
+          git status
+
+      - name: Configure & build kernel
+        run: |
+          set -euxo pipefail
+          cd kernel
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          # DEFCONFIG: for 7T(hotdogb) many sources use hotdog_defconfig
+          # If your tree has hotdogb_defconfig, switch the next line to that.
+          make O=out hotdog_defconfig
+          make -j"$(nproc)" O=out
+
+      - name: Upload kernel image (Image.gz-dtb)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-ksu
+          path: kernel/out/arch/arm64/boot/Image.gz-dtb
